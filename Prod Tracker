@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Case Productivity Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutral (Stone) with Teal accents -->
+    <!-- Application Structure Plan: A single-view dashboard is used for immediate insight. The layout prioritizes key information: high-level KPIs at the top, comparative performance (bar chart) and workflow status (donut chart) in the middle, and detailed data (table) at the bottom. A global dropdown filter allows users to seamlessly switch between an overall team view and an individual's performance, updating all visual elements dynamically. This structure was chosen for its intuitive "overview first, then details on demand" user flow, which is highly effective for quick analysis and decision-making by a manager. -->
+    <!-- Visualization & Content Choices: 
+        - Productivity Scores: Report Info -> Compare individual productivity -> Goal -> Bar Chart -> Interaction -> Filterable by team member, hover for details -> Justification -> Best for direct comparison across categories (team members). Library -> Chart.js.
+        - Case Status Distribution: Report Info -> Understand current workflow state -> Goal -> Donut Chart -> Interaction -> Filterable, hover for details -> Justification -> Excellent for showing parts-of-a-whole composition. Library -> Chart.js.
+        - Key Metrics (Total, Waiting, Closed): Report Info -> Quick summary stats -> Goal -> KPI Cards (HTML/CSS) -> Interaction -> Dynamically update with filter -> Justification -> High visibility for critical numbers. Method -> HTML/Tailwind.
+        - Raw Case Data: Report Info -> Detailed case information -> Goal -> Filterable Table -> Interaction -> Filter by team member -> Justification -> Provides granular detail for investigation. Method -> HTML/Tailwind + JS.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* Tailwind's slate-50 */
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 40vh;
+            max-height: 400px;
+        }
+        .kpi-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: transform 0.2s ease-in-out;
+        }
+        .kpi-card:hover {
+            transform: translateY(-5px);
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <header class="mb-8">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900">Case Productivity Dashboard</h1>
+                    <p class="text-md text-gray-500 mt-1">Live overview of team performance and case status.</p>
+                </div>
+                <div class="mt-4 sm:mt-0">
+                    <label for="teamMemberFilter" class="sr-only">Filter by Team Member</label>
+                    <select id="teamMemberFilter" class="w-full sm:w-auto bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block p-2.5 shadow-sm">
+                        <option value="all" selected>All Team Members</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <section id="kpi-section" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="kpi-card">
+                    <h3 class="text-gray-500 font-medium">Total Cases</h3>
+                    <p id="totalCases" class="text-4xl font-bold text-teal-600 mt-2">0</p>
+                </div>
+                <div class="kpi-card">
+                    <h3 class="text-gray-500 font-medium">Productivity Score</h3>
+                    <p id="totalProductivityScore" class="text-4xl font-bold text-teal-600 mt-2">0</p>
+                </div>
+                <div class="kpi-card">
+                    <h3 class="text-gray-500 font-medium">Cases in Waiting</h3>
+                    <p id="casesWaiting" class="text-4xl font-bold text-amber-600 mt-2">0</p>
+                </div>
+                <div class="kpi-card">
+                    <h3 class="text-gray-500 font-medium">Cases Closed</h3>
+                    <p id="casesClosed" class="text-4xl font-bold text-green-600 mt-2">0</p>
+                </div>
+            </section>
+
+            <section class="grid grid-cols-1 lg:grid-cols-5 gap-8 mb-8">
+                <div class="lg:col-span-3 bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-xl font-semibold mb-4">Productivity Score by Team Member</h2>
+                    <p class="text-sm text-gray-500 mb-4">This chart shows the total number of cases handled by each team member, excluding any cases currently in the 'Waiting' section. Use the filter to see an individual's score.</p>
+                    <div class="chart-container">
+                        <canvas id="productivityChart"></canvas>
+                    </div>
+                </div>
+                <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-xl font-semibold mb-4">Case Distribution by Section</h2>
+                    <p class="text-sm text-gray-500 mb-4">This chart displays the proportion of all active cases across the various workflow sections, providing insight into potential bottlenecks.</p>
+                    <div class="chart-container">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-xl shadow-md">
+                <h2 class="text-xl font-semibold mb-4">Case Details</h2>
+                <p class="text-sm text-gray-500 mb-4">This table provides a detailed list of all cases. Use the main filter at the top of the page to narrow down the results to a specific team member.</p>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Case ID</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team Member</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Section</th>
+                            </tr>
+                        </thead>
+                        <tbody id="caseTableBody" class="bg-white divide-y divide-gray-200">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const teamMembers = ["Anna", "Ben", "Chloe", "David", "Eva"];
+            const sections = [
+                "New Case Opened + Hubble", "Waiting", "Pushed Back to FP", 
+                "Fraud Review Excelsior", "POA Legacy / Non Legacy Excelsior", 
+                "Follow-up with Fraud Team / FP", "Case Closed"
+            ];
+            
+            const caseData = generateSampleData(150);
+
+            let productivityChart, statusChart;
+            
+            function generateSampleData(count) {
+                const data = [];
+                for (let i = 1; i <= count; i++) {
+                    const member = teamMembers[Math.floor(Math.random() * teamMembers.length)];
+                    const section = sections[Math.floor(Math.random() * sections.length)];
+                    const date = new Date(new Date() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000);
+                    data.push({
+                        caseId: `C-${String(1000 + i).slice(1)}`,
+                        teamMember: member,
+                        date: date.toISOString().split('T')[0],
+                        section: section
+                    });
+                }
+                return data;
+            }
+
+            function populateFilter() {
+                const filter = document.getElementById('teamMemberFilter');
+                teamMembers.forEach(member => {
+                    const option = document.createElement('option');
+                    option.value = member;
+                    option.textContent = member;
+                    filter.appendChild(option);
+                });
+            }
+
+            function updateDashboard() {
+                const selectedMember = document.getElementById('teamMemberFilter').value;
+                const filteredData = selectedMember === 'all' 
+                    ? caseData 
+                    : caseData.filter(c => c.teamMember === selectedMember);
+
+                updateKPIs(filteredData);
+                updateProductivityChart(filteredData, selectedMember);
+                updateStatusChart(filteredData);
+                updateCaseTable(filteredData);
+            }
+
+            function updateKPIs(data) {
+                const productivityScore = data.filter(c => c.section !== 'Waiting').length;
+                const casesWaiting = data.filter(c => c.section === 'Waiting').length;
+                const casesClosed = data.filter(c => c.section === 'Case Closed').length;
+
+                document.getElementById('totalCases').textContent = data.length;
+                document.getElementById('totalProductivityScore').textContent = productivityScore;
+                document.getElementById('casesWaiting').textContent = casesWaiting;
+                document.getElementById('casesClosed').textContent = casesClosed;
+            }
+
+            function updateCaseTable(data) {
+                const tableBody = document.getElementById('caseTableBody');
+                tableBody.innerHTML = '';
+                if (data.length === 0) {
+                    const row = `<tr><td colspan="4" class="px-6 py-4 text-center text-gray-500">No data available for this selection.</td></tr>`;
+                    tableBody.innerHTML = row;
+                    return;
+                }
+                data.forEach(c => {
+                    const row = `
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${c.caseId}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${c.teamMember}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${c.date}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${c.section}</td>
+                        </tr>
+                    `;
+                    tableBody.innerHTML += row;
+                });
+            }
+
+            function initCharts() {
+                const productivityCtx = document.getElementById('productivityChart').getContext('2d');
+                productivityChart = new Chart(productivityCtx, {
+                    type: 'bar',
+                    data: { labels: [], datasets: [] },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true, grid: { color: '#e5e7eb' } }, x: { grid: { display: false } } },
+                        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1f2937', titleFont: { size: 14 }, bodyFont: { size: 12 } } }
+                    }
+                });
+
+                const statusCtx = document.getElementById('statusChart').getContext('2d');
+                statusChart = new Chart(statusCtx, {
+                    type: 'doughnut',
+                    data: { labels: [], datasets: [] },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { 
+                            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12 } } },
+                            tooltip: { backgroundColor: '#1f2937', titleFont: { size: 14 }, bodyFont: { size: 12 } }
+                        }
+                    }
+                });
+            }
+
+            function updateProductivityChart(data, selectedMember) {
+                let chartLabels, chartData;
+                if (selectedMember === 'all') {
+                    const scores = teamMembers.map(member => {
+                        return data.filter(c => c.teamMember === member && c.section !== 'Waiting').length;
+                    });
+                    chartLabels = teamMembers;
+                    chartData = scores;
+                } else {
+                    const score = data.filter(c => c.section !== 'Waiting').length;
+                    chartLabels = [selectedMember];
+                    chartData = [score];
+                }
+
+                productivityChart.data.labels = chartLabels;
+                productivityChart.data.datasets = [{
+                    label: 'Productivity Score',
+                    data: chartData,
+                    backgroundColor: 'rgba(13, 148, 136, 0.6)',
+                    borderColor: 'rgba(13, 148, 136, 1)',
+                    borderWidth: 1,
+                    borderRadius: 4
+                }];
+                productivityChart.update();
+            }
+
+            function updateStatusChart(data) {
+                const statusCounts = sections.map(section => {
+                    return data.filter(c => c.section === section).length;
+                });
+
+                statusChart.data.labels = sections;
+                statusChart.data.datasets = [{
+                    label: 'Case Count',
+                    data: statusCounts,
+                    backgroundColor: [
+                        '#34d399', '#f59e0b', '#ef4444', '#6366f1', '#8b5cf6', '#ec4899', '#10b981'
+                    ],
+                    hoverOffset: 4
+                }];
+                statusChart.update();
+            }
+
+            function init() {
+                populateFilter();
+                initCharts();
+                updateDashboard();
+                document.getElementById('teamMemberFilter').addEventListener('change', updateDashboard);
+            }
+
+            init();
+        });
+    </script>
+</body>
+</html>
